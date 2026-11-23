@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Math Sandbox 実験ノート：2025年 東大文系 第1問：放物線と法線</title>
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- KaTeX (CDN + auto-render) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script
+    defer
+    src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '$', right: '$', display: false }
+      ],
+      throwOnError: false
+    });"
+  ></script>
+
+  <style>
+    body {
+      font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+      line-height: 1.8;
+    }
+    .katex-display {
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0.4rem 0;
+    }
+    details.detail_box > summary {
+      list-style: none;
+    }
+    details.detail_box > summary::-webkit-details-marker {
+      display: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+  <div id="note_container" class="max-w-3xl mx-auto px-4 py-8 sm:px-6 sm:py-12 space-y-6">
+
+    <!-- 上部ナビゲーション & アプリ連携ボタン -->
+    <div id="top_action_bar" class="flex flex-wrap items-center justify-between gap-3">
+      <a
+        href="../index.html"
+        class="text-sm text-slate-500 hover:text-slate-800 transition-colors"
+      >
+        ← トップページへ戻る
+      </a>
+      <a
+        href="./app_todai_2025_bun_1.html"
+        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-sm hover:shadow transition-all"
+      >
+        <span>▶ 動くグラフアプリで試す</span>
+      </a>
+    </div>
+
+    <!-- メインカード -->
+    <main id="note_card" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-10 space-y-10">
+
+      <!-- セクション1：ヘッダー・問題の概要 -->
+      <section id="section_overview" class="space-y-4 border-b border-slate-100 pb-8">
+        <div class="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold tracking-wide">
+          東大数学 • 2026-11-23
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 leading-snug">
+          2025年 東大文系 第1問：放物線と法線
+        </h1>
+        <p class="text-base sm:text-lg text-slate-600 font-medium">
+          放物線 $y = x^2$ と法線が織りなす動きを数式とアプリで観察する
+        </p>
+
+        <div class="bg-slate-50 rounded-xl p-5 border border-slate-200/80 text-sm sm:text-base text-slate-700 space-y-2">
+          <p class="font-bold text-slate-900">問題の概要</p>
+          <p>
+            放物線 $y = x^2$ 上に点 $P(a, a^2)$ をとり、点 $P$ で接線に垂直に交わる直線（<strong>法線</strong> $\ell$）を引きます。
+            法線 $\ell$ が放物線ともう一度交わる点を $Q$ とするとき、$a$ を動かすと点 $Q$ の位置や線分 $PQ$ の長さがどのように変化するかを調べます。
+          </p>
+        </div>
+      </section>
+
+      <!-- セクション2：まずはアプリで観察してみよう -->
+      <section id="section_observe" class="bg-sky-50/80 border border-sky-200 rounded-xl p-5 sm:p-6 space-y-3">
+        <h2 class="text-lg font-bold text-sky-900">
+          まずはアプリで観察してみよう
+        </h2>
+        <p class="text-sm sm:text-base text-sky-900/90">
+          数式を追う前に、まずはアプリでスライダー $a$ を動かしてみてください。グラフの動きを眺めるだけで、式の振る舞いが直感的に見えてきます。
+        </p>
+        <ul class="list-disc list-inside space-y-1.5 text-sm sm:text-base text-sky-900/90 pl-1">
+          <li>
+            <strong>$a = 0$ に近づけたとき：</strong> 点 $P$ が原点に近づくにつれて、もう一つの交点 $Q$ が急激に上へ遠ざかり、$a = 0$ で消えてしまいます。
+          </li>
+          <li>
+            <strong>$|a| \approx 0.71$ 付近での変化：</strong> 線分 $PQ$ がオレンジ色に変わり、最も短くなる瞬間が確認できます。
+          </li>
+          <li>
+            <strong>接線と法線の直交：</strong> 「接線を表示する」をオンにして動かすと、点 $P$ で常に $90^\circ$ を保ったまま回転する様子が見えます。
+          </li>
+        </ul>
+      </section>
+
+      <!-- セクション3：ステップ解説 -->
+      <section id="section_math_steps" class="space-y-8">
+        <h2 class="text-xl font-bold text-slate-900 border-l-4 border-blue-600 pl-3">
+          数式でたどる仕組み
+        </h2>
+
+        <div id="step_1_normal" class="space-y-3">
+          <h3 class="text-base sm:text-lg font-bold text-slate-800">
+            Step 1：点 $P(a, a^2)$ における接線と法線
+          </h3>
+          <p class="text-sm sm:text-base text-slate-700">
+            放物線 $y = x^2$ を微分すると $y' = 2x$ なので、点 $P(a, a^2)$ における接線の傾きは $2a$、方程式は次の通りです。
+          </p>
+          <div class="bg-slate-50 rounded-lg px-4 py-2 text-center">
+            $$y = 2ax - a^2$$
+          </div>
+          <p class="text-sm sm:text-base text-slate-700">
+            法線 $\ell$ は点 $P$ を通り接線に垂直な直線です。$a \neq 0$ のとき傾きは $-\frac{1}{2a}$ となり、方程式は次のようになります。
+          </p>
+          <div class="bg-slate-50 rounded-lg px-4 py-2 text-center">
+            $$\ell:\; y = -\frac{1}{2a}(x - a) + a^2$$
+          </div>
+          <p class="text-xs sm:text-sm text-slate-500">
+            ※ $a = 0$ のときは接線が $x$ 軸（$y = 0$）となるため、法線 $\ell$ は $y$ 軸（$x = 0$）になります。
+          </p>
+        </div>
+
+        <div id="step_2_intersection" class="space-y-3">
+          <h3 class="text-base sm:text-lg font-bold text-slate-800">
+            Step 2：放物線とのもう一つの交点 $Q$
+          </h3>
+          <p class="text-sm sm:text-base text-slate-700">
+            $a \neq 0$ のとき、法線 $\ell$ と $y = x^2$ を連立すると $x = a$ 以外の解として交点 $Q$ の $x$ 座標が得られます。
+          </p>
+          <div class="bg-slate-50 rounded-lg px-4 py-2 text-center">
+            $$x_Q = -a - \frac{1}{2a}, \qquad y_Q = x_Q^2 = \left(a + \frac{1}{2a}\right)^2$$
+          </div>
+
+          <details class="detail_box bg-slate-50 border border-slate-200 rounded-xl overflow-hidden group">
+            <summary class="px-4 py-3 text-sm font-semibold text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors flex items-center justify-between select-none">
+              <span>詳しい式変形を見る（行間ゼロの補足）</span>
+              <span class="text-xs text-slate-500 group-open:hidden">クリックして開く ▼</span>
+              <span class="text-xs text-slate-500 hidden group-open:inline">閉じる ▲</span>
+            </summary>
+            <div class="px-4 pb-4 pt-2 border-t border-slate-200 text-sm text-slate-700 space-y-2">
+              <p>$y = x^2$ と法線の式 $y = -\frac{1}{2a}(x - a) + a^2$ から $y$ を消去します。</p>
+              $$x^2 = -\frac{1}{2a}(x - a) + a^2$$
+              <p>$a^2$ を左辺に移項して $(x^2 - a^2) = (x - a)(x + a)$ と変形し、右辺も左辺にまとめます。</p>
+              $$(x^2 - a^2) + \frac{1}{2a}(x - a) = 0$$
+              $$(x - a)(x + a) + \frac{1}{2a}(x - a) = 0$$
+              <p>共通因数 $(x - a)$ でくくります。</p>
+              $$(x - a)\left(x + a + \frac{1}{2a}\right) = 0$$
+              <p>点 $Q$ は $P$ とは異なる交点（$x \neq a$）なので、$x + a + \frac{1}{2a} = 0$ より</p>
+              $$x_Q = -a - \frac{1}{2a}$$
+              <p>が得られます。また、線分 $PQ$ の長さは傾き $-\frac{1}{2a}$ の直角三角形の斜辺として</p>
+              $$PQ = |x_Q - a|\sqrt{1 + \left(-\frac{1}{2a}\right)^2} = \left|-2a - \frac{1}{2a}\right|\sqrt{1 + \frac{1}{4a^2}} = \frac{(4a^2 + 1)^{\frac{3}{2}}}{4a^2}$$
+              <p>となり、$t = 4a^2 > 0$ とおいて $\frac{(t + 1)^3}{t^2}$ を調べると、$t = 2$ すなわち $|a| = \frac{1}{\sqrt{2}} \approx 0.7071$ で最小値 $\frac{3\sqrt{3}}{2} \approx 2.598$ をとります。</p>
+            </div>
+          </details>
+        </div>
+
+        <div id="step_3_connection" class="space-y-3">
+          <h3 class="text-base sm:text-lg font-bold text-slate-800">
+            Step 3：アプリの動きと数式の一致
+          </h3>
+          <ul class="list-disc list-inside space-y-2 text-sm sm:text-base text-slate-700 pl-1">
+            <li>
+              <strong>$a \to 0$ で $Q$ が上空へ飛ぶ理由：</strong> $x_Q = -a - \frac{1}{2a}$ の分母に $a$ があるため、$a \to 0$ で $|x_Q| \to \infty$、$y_Q = x_Q^2 \to \infty$ となります。
+            </li>
+            <li>
+              <strong>$a = 0$ で $Q$ が消える理由：</strong> 法線が $y$ 軸（$x = 0$）となり、放物線と原点 $P(0, 0)$ 以外で交わらなくなるためです。
+            </li>
+            <li>
+              <strong>$|a| \approx 0.71$ で最短になる理由：</strong> $P$ が離れすぎず、かつ $Q$ が飛びすぎないバランス点が $|a| = \frac{1}{\sqrt{2}}$ です。
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- セクション4：AI実験メモ（著者編集用） -->
+      <section id="section_ai_memo" class="bg-amber-50/80 border border-amber-200 rounded-xl p-5 sm:p-6 space-y-3">
+        <h2 class="text-base sm:text-lg font-bold text-amber-900">
+          AI実験メモ（著者編集用）
+        </h2>
+        <p class="text-xs sm:text-sm text-amber-800/80">
+          ※ ここは制作メモや気づきを後から追記するためのプレースホルダー枠です。
+        </p>
+        <ul class="list-disc list-inside space-y-1.5 text-sm text-amber-900/90 pl-1">
+          <li><strong>試してみたこと：</strong> （ここに制作の経緯やプロンプトの工夫などを記入）</li>
+          <li><strong>ハマった点・工夫：</strong> （例：$a = 0$ の例外処理や、1:1 正方スケールによる直交の再現）</li>
+          <li><strong>今後のアイデア：</strong> （ここに次の実験アイデアなどを記入）</li>
+        </ul>
+      </section>
+
+    </main>
+
+    <!-- 下部アクション & フッター -->
+    <footer id="note_footer" class="pt-4 pb-8 space-y-6 text-center">
+      <div>
+        <a
+          href="./app_todai_2025_bun_1.html"
+          class="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm sm:text-base font-bold shadow-sm hover:shadow transition-all"
+        >
+          <span>▶ 動くグラフアプリで試す</span>
+        </a>
+      </div>
+
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs sm:text-sm text-slate-500">
+        <span>AI Math Sandbox</span>
+        <span class="hidden sm:inline">•</span>
+        <a href="../index.html" class="text-blue-600 hover:underline">
+          トップページへ戻る
+        </a>
+      </div>
+    </footer>
+
+  </div>
+</body>
+</html>

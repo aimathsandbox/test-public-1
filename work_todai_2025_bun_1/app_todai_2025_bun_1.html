@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2025年 東大文系 第1問：放物線と法線 | 2D視覚化アプリ</title>
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- KaTeX (CDN) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+
+  <!-- React 18 & ReactDOM 18 (CDN) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel Standalone (CDN) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- p5.js (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+
+  <style>
+    html, body, #app_root_container {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    }
+    .katex {
+      font-size: 1.02em;
+    }
+    .katex-display {
+      margin: 0.35em 0 !important;
+    }
+    input[type="range"].param_slider {
+      accent-color: #2563eb;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div id="app_root_container"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // ---------------------------------------------------------
+    // 定数定義
+    // ---------------------------------------------------------
+    const PARAM_A_MIN = -2.5;
+    const PARAM_A_MAX = 2.5;
+    const PARAM_A_STEP = 0.01;
+    const PARAM_A_INIT = 1.0;
+    const OPTIMAL_ABS_A = 1 / Math.sqrt(2);
+    const NEAR_OPTIMAL_TOLERANCE = 0.035;
+    const ZERO_EPSILON = 1e-6;
+
+    // ---------------------------------------------------------
+    // 数学計算ヘルパー関数
+    // ---------------------------------------------------------
+    function compute_math_state(param_a) {
+      const a = Math.round(param_a * 100) / 100;
+      const p_x = a;
+      const p_y = a * a;
+      const is_zero = Math.abs(a) < ZERO_EPSILON;
+
+      if (is_zero) {
+        return {
+          a: 0,
+          is_zero: true,
+          p_x: 0,
+          p_y: 0,
+          q_exists: false,
+          q_x: null,
+          q_y: null,
+          pq_length: null,
+          is_near_optimal: false
+        };
+      }
+
+      const q_x = -a - 1 / (2 * a);
+      const q_y = q_x * q_x;
+      const pq_length = Math.hypot(q_x - p_x, q_y - p_y);
+      const is_near_optimal = Math.abs(Math.abs(a) - OPTIMAL_ABS_A) <= NEAR_OPTIMAL_TOLERANCE;
+
+      return {
+        a,
+        is_zero: false,
+        p_x,
+        p_y,
+        q_exists: true,
+        q_x,
+        q_y,
+        pq_length,
+        is_near_optimal
+      };
+    }
+
+    function format_num(val, digits = 2) {
+      if (val === null || val === undefined || Number.isNaN(val) || !Number.isFinite(val)) return "-";
+      const rounded = Math.abs(val) < 1e-9 ? 0 : val;
+      return rounded.toFixed(digits);
+    }
+
+    function format_signed_term(val, digits = 2) {
+      const abs_str = Math.abs(val).toFixed(digits);
+      return val >= 0 ? `+ ${abs_str}` : `- ${abs_str}`;
+    }
+
+    // ---------------------------------------------------------
+    // KaTeX レンダリングヘルパー
+    // ---------------------------------------------------------
+    function render_katex_html(tex_string, is_display_mode = false) {
+      try {
+        return katex.renderToString(tex_string, {
+          throwOnError: false,
+          displayMode: is_display_mode
+        });
+      } catch (err) {
+        return tex_string;
+      }
+    }
+
+    function make_math_span(tex_string, is_display_mode = false) {
+      const html_str = render_katex_html(tex_string, is_display_mode);
+      return <span dangerouslySetInnerHTML={{ __html: html_str }} />;
+    }
+
+    // ---------------------------------------------------------
+    // デカルト座標系変換ヘルパー（右 +x, 上 +y, 1:1正方スケール）
+    // ---------------------------------------------------------
+    function create_coord_system(canvas_width, canvas_height, view_bounds) {
+      const { x_min, x_max, y_min, y_max, padding_px } = view_bounds;
+      const inner_w = Math.max(10, canvas_width - padding_px * 2);
+      const inner_h = Math.max(10, canvas_height - padding_px * 2);
+
+      const scale_px = Math.min(inner_w / (x_max - x_min), inner_h / (y_max - y_min));
+      const center_math_x = (x_min + x_max) / 2;
+      const center_math_y = (y_min + y_max) / 2;
+      const center_screen_x = canvas_width / 2;
+      const center_screen_y = canvas_height / 2;
+
+      return {
+        scale_px,
+        to_screen_x(mx) {
+          return center_screen_x + (mx - center_math_x) * scale_px;
+        },
+        to_screen_y(my) {
+          return center_screen_y - (my - center_math_y) * scale_px;
+        },
+        to_math_x(sx) {
+          return center_math_x + (sx - center_screen_x) / scale_px;
+        },
+        to_math_y(sy) {
+          return center_math_y - (sy - center_screen_y) / scale_px;
+        },
+        visible_x_min() {
+          return this.to_math_x(0);
+        },
+        visible_x_max() {
+          return this.to_math_x(canvas_width);
+        },
+        visible_y_min() {
+          return this.to_math_y(canvas_height);
+        },
+        visible_y_max() {
+          return this.to_math_y(0);
+        }
+      };
+    }
+
+    // ---------------------------------------------------------
+    // p5.js 描画関数群
+    // ---------------------------------------------------------
+    function draw_dashed_line(p, x1, y1, x2, y2, dash_len = 7, gap_len = 5) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const total_len = Math.hypot(dx, dy);
+      if (total_len < 1e-3) return;
+      const ux = dx / total_len;
+      const uy = dy / total_len;
+      let dist = 0;
+      while (dist < total_len) {
+        const seg_end = Math.min(dist + dash_len, total_len);
+        p.line(x1 + ux * dist, y1 + uy * dist, x1 + ux * seg_end, y1 + uy * seg_end);
+        dist += dash_len + gap_len;
+      }
+    }
+
+    function draw_grid_and_axes(p, coord, show_grid) {
+      const vx_min = Math.floor(coord.visible_x_min());
+      const vx_max = Math.ceil(coord.visible_x_max());
+      const vy_min = Math.floor(coord.visible_y_min());
+      const vy_max = Math.ceil(coord.visible_y_max());
+
+      if (show_grid) {
+        p.stroke(241, 245, 249);
+        p.strokeWeight(1);
+        for (let x = vx_min; x <= vx_max; x += 0.5) {
+          const sx = coord.to_screen_x(x);
+          p.line(sx, 0, sx, p.height);
+        }
+        for (let y = vy_min; y <= vy_max; y += 0.5) {
+          const sy = coord.to_screen_y(y);
+          p.line(0, sy, p.width, sy);
+        }
+
+        p.stroke(226, 232, 240);
+        p.strokeWeight(1);
+        for (let x = vx_min; x <= vx_max; x += 1) {
+          const sx = coord.to_screen_x(x);
+          p.line(sx, 0, sx, p.height);
+        }
+        for (let y = vy_min; y <= vy_max; y += 1) {
+          const sy = coord.to_screen_y(y);
+          p.line(0, sy, p.width, sy);
+        }
+      }
+
+      const origin_sx = coord.to_screen_x(0);
+      const origin_sy = coord.to_screen_y(0);
+
+      p.stroke(100, 116, 139);
+      p.strokeWeight(1.5);
+      if (origin_sy >= 0 && origin_sy <= p.height) {
+        p.line(0, origin_sy, p.width, origin_sy);
+        p.fill(100, 116, 139);
+        p.noStroke();
+        p.triangle(p.width - 4, origin_sy, p.width - 14, origin_sy - 4, p.width - 14, origin_sy + 4);
+      }
+      if (origin_sx >= 0 && origin_sx <= p.width) {
+        p.stroke(100, 116, 139);
+        p.strokeWeight(1.5);
+        p.line(origin_sx, p.height, origin_sx, 0);
+        p.fill(100, 116, 139);
+        p.noStroke();
+        p.triangle(origin_sx, 4, origin_sx - 4, 14, origin_sx + 4, 14);
+      }
+
+      p.fill(100, 116, 139);
+      p.noStroke();
+      p.textSize(11);
+      p.textAlign(p.CENTER, p.TOP);
+      for (let x = vx_min; x <= vx_max; x += 1) {
+        if (x === 0) continue;
+        const sx = coord.to_screen_x(x);
+        if (sx > 18 && sx < p.width - 18) {
+          p.text(String(x), sx, Math.min(Math.max(origin_sy + 5, 4), p.height - 16));
+        }
+      }
+
+      p.textAlign(p.RIGHT, p.MIDDLE);
+      for (let y = vy_min; y <= vy_max; y += 1) {
+        if (y === 0) continue;
+        const sy = coord.to_screen_y(y);
+        if (sy > 18 && sy < p.height - 18) {
+          p.text(String(y), Math.min(Math.max(origin_sx - 6, 18), p.width - 8), sy);
+        }
+      }
+
+      p.textAlign(p.RIGHT, p.TOP);
+      p.text("O", origin_sx - 6, origin_sy + 4);
+      p.textStyle(p.ITALIC);
+      p.textSize(13);
+      p.textAlign(p.RIGHT, p.BOTTOM);
+      p.text("x", p.width - 10, origin_sy - 6);
+      p.textAlign(p.LEFT, p.TOP);
+      p.text("y", origin_sx + 8, 8);
+      p.textStyle(p.NORMAL);
+    }
+
+    function draw_parabola(p, coord) {
+      const vx_min = coord.visible_x_min() - 0.5;
+      const vx_max = coord.visible_x_max() + 0.5;
+      const steps = 240;
+
+      p.noFill();
+      p.stroke(51, 65, 85);
+      p.strokeWeight(2.2);
+      p.beginShape();
+      for (let i = 0; i <= steps; i++) {
+        const mx = vx_min + ((vx_max - vx_min) * i) / steps;
+        const my = mx * mx;
+        p.vertex(coord.to_screen_x(mx), coord.to_screen_y(my));
+      }
+      p.endShape();
+    }
+
+    function draw_right_angle_marker(p, coord, math_state) {
+      if (math_state.is_zero || !math_state.q_exists) return;
+      const { a, p_x, p_y, q_x, q_y } = math_state;
+      const t_norm = Math.hypot(1, 2 * a);
+      const tx = 1 / t_norm;
+      const ty = (2 * a) / t_norm;
+      const pq_norm = Math.hypot(q_x - p_x, q_y - p_y);
+      const nx = (q_x - p_x) / pq_norm;
+      const ny = (q_y - p_y) / pq_norm;
+
+      const marker_size_math = 12 / coord.scale_px;
+      const p1x = p_x + tx * marker_size_math;
+      const p1y = p_y + ty * marker_size_math;
+      const p2x = p1x + nx * marker_size_math;
+      const p2y = p1y + ny * marker_size_math;
+      const p3x = p_x + nx * marker_size_math;
+      const p3y = p_y + ny * marker_size_math;
+
+      p.noFill();
+      p.stroke(148, 163, 184);
+      p.strokeWeight(1.2);
+      p.beginShape();
+      p.vertex(coord.to_screen_x(p1x), coord.to_screen_y(p1y));
+      p.vertex(coord.to_screen_x(p2x), coord.to_screen_y(p2y));
+      p.vertex(coord.to_screen_x(p3x), coord.to_screen_y(p3y));
+      p.endShape();
+    }
+
+    // ---------------------------------------------------------
+    // メインアプリ
+    // ---------------------------------------------------------
+    function app_root() {
+      const [param_a, set_param_a] = useState(PARAM_A_INIT);
+      const [is_playing, set_is_playing] = useState(false);
+      const [show_tangent, set_show_tangent] = useState(true);
+      const [show_grid, set_show_grid] = useState(true);
+
+      const container_ref = useRef(null);
+      const state_ref = useRef({
+        param_a: PARAM_A_INIT,
+        show_tangent: true,
+        show_grid: true
+      });
+      const play_direction_ref = useRef(1);
+
+      const math_state = useMemo(() => compute_math_state(param_a), [param_a]);
+
+      useEffect(() => {
+        state_ref.current = { param_a, show_tangent, show_grid };
+      }, [param_a, show_tangent, show_grid]);
+
+      useEffect(() => {
+        if (!is_playing) return undefined;
+        let animation_id = null;
+        let last_time = performance.now();
+
+        const tick = (now) => {
+          const dt = Math.min((now - last_time) / 1000, 0.05);
+          last_time = now;
+          const speed = 0.75;
+
+          set_param_a((prev) => {
+            let next = prev + play_direction_ref.current * speed * dt;
+            if (next >= PARAM_A_MAX) {
+              next = PARAM_A_MAX;
+              play_direction_ref.current = -1;
+            } else if (next <= PARAM_A_MIN) {
+              next = PARAM_A_MIN;
+              play_direction_ref.current = 1;
+            }
+            return Math.round(next * 100) / 100;
+          });
+
+          animation_id = requestAnimationFrame(tick);
+        };
+
+        animation_id = requestAnimationFrame(tick);
+        return () => {
+          if (animation_id !== null) cancelAnimationFrame(animation_id);
+        };
+      }, [is_playing]);
+
+      useEffect(() => {
+        const container = container_ref.current;
+        if (!container) return undefined;
+
+        const sketch = (p) => {
+          p.setup = () => {
+            const w = container.clientWidth || 600;
+            const h = container.clientHeight || 500;
+            p.createCanvas(w, h);
+            p.pixelDensity(Math.min(window.devicePixelRatio || 1, 2));
+          };
+
+          p.draw = () => {
+            const { param_a: cur_a, show_tangent: cur_tangent, show_grid: cur_grid } = state_ref.current;
+            const cur_math = compute_math_state(cur_a);
+
+            p.background(255);
+
+            const coord = create_coord_system(p.width, p.height, {
+              x_min: -3.5,
+              x_max: 3.5,
+              y_min: -0.8,
+              y_max: 6.5,
+              padding_px: 28
+            });
+
+            draw_grid_and_axes(p, coord, cur_grid);
+            draw_parabola(p, coord);
+
+            const vx_min = coord.visible_x_min() - 1;
+            const vx_max = coord.visible_x_max() + 1;
+            const vy_min = coord.visible_y_min() - 1;
+            const vy_max = coord.visible_y_max() + 1;
+
+            // 接線（薄いグレー破線）
+            if (cur_tangent) {
+              const t_y1 = 2 * cur_math.a * vx_min - cur_math.a * cur_math.a;
+              const t_y2 = 2 * cur_math.a * vx_max - cur_math.a * cur_math.a;
+              p.stroke(148, 163, 184);
+              p.strokeWeight(1.5);
+              draw_dashed_line(
+                p,
+                coord.to_screen_x(vx_min),
+                coord.to_screen_y(t_y1),
+                coord.to_screen_x(vx_max),
+                coord.to_screen_y(t_y2),
+                7,
+                5
+              );
+            }
+
+            // 法線 l
+            if (cur_math.is_zero) {
+              const sx0 = coord.to_screen_x(0);
+              p.stroke(16, 185, 129);
+              p.strokeWeight(2);
+              p.line(sx0, coord.to_screen_y(vy_min), sx0, coord.to_screen_y(vy_max));
+            } else {
+              const slope = -1 / (2 * cur_math.a);
+              const n_y1 = slope * (vx_min - cur_math.a) + cur_math.p_y;
+              const n_y2 = slope * (vx_max - cur_math.a) + cur_math.p_y;
+              p.stroke(14, 165, 233, 140);
+              p.strokeWeight(1.6);
+              p.line(
+                coord.to_screen_x(vx_min),
+                coord.to_screen_y(n_y1),
+                coord.to_screen_x(vx_max),
+                coord.to_screen_y(n_y2)
+              );
+
+              if (cur_tangent) {
+                draw_right_angle_marker(p, coord, cur_math);
+              }
+            }
+
+            // 線分 PQ（最小値付近でオレンジ強調）
+            if (cur_math.q_exists) {
+              const px_s = coord.to_screen_x(cur_math.p_x);
+              const py_s = coord.to_screen_y(cur_math.p_y);
+              const qx_s = coord.to_screen_x(cur_math.q_x);
+              const qy_s = coord.to_screen_y(cur_math.q_y);
+
+              if (cur_math.is_near_optimal) {
+                p.stroke(249, 115, 22);
+                p.strokeWeight(4);
+              } else {
+                p.stroke(99, 102, 241);
+                p.strokeWeight(2.8);
+              }
+              p.line(px_s, py_s, qx_s, qy_s);
+
+              const mid_x = (px_s + qx_s) / 2;
+              const mid_y = (py_s + qy_s) / 2;
+              if (mid_x > 20 && mid_x < p.width - 20 && mid_y > 20 && mid_y < p.height - 20) {
+                p.noStroke();
+                p.fill(cur_math.is_near_optimal ? p.color(234, 88, 12) : p.color(67, 56, 202));
+                p.textSize(12);
+                p.textStyle(p.BOLD);
+                p.textAlign(p.LEFT, p.BOTTOM);
+                p.text(`PQ = ${format_num(cur_math.pq_length, 2)}`, mid_x + 8, mid_y - 4);
+                p.textStyle(p.NORMAL);
+              }
+            }
+
+            // 点 Q（赤）
+            if (cur_math.q_exists) {
+              const qx_s = coord.to_screen_x(cur_math.q_x);
+              const qy_s = coord.to_screen_y(cur_math.q_y);
+              p.fill(220, 38, 38);
+              p.stroke(255);
+              p.strokeWeight(2);
+              p.circle(qx_s, qy_s, 11);
+
+              if (qx_s >= 10 && qx_s <= p.width - 10 && qy_s >= 10 && qy_s <= p.height - 10) {
+                p.fill(185, 28, 28);
+                p.noStroke();
+                p.textSize(14);
+                p.textStyle(p.BOLD);
+                p.textAlign(p.LEFT, p.BOTTOM);
+                p.text("Q", qx_s + 8, qy_s - 6);
+                p.textStyle(p.NORMAL);
+              }
+            }
+
+            // 点 P（青）
+            const px_s = coord.to_screen_x(cur_math.p_x);
+            const py_s = coord.to_screen_y(cur_math.p_y);
+            p.fill(37, 99, 235);
+            p.stroke(255);
+            p.strokeWeight(2);
+            p.circle(px_s, py_s, 11);
+
+            p.fill(29, 78, 216);
+            p.noStroke();
+            p.textSize(14);
+            p.textStyle(p.BOLD);
+            p.textAlign(p.LEFT, p.TOP);
+            p.text("P", px_s + 8, py_s + 6);
+            p.textStyle(p.NORMAL);
+          };
+        };
+
+        const p5_instance = new p5(sketch, container);
+
+        const resize_observer = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            const { width, height } = entry.contentRect;
+            if (width > 0 && height > 0) {
+              p5_instance.resizeCanvas(Math.floor(width), Math.floor(height));
+            }
+          }
+        });
+        resize_observer.observe(container);
+
+        return () => {
+          resize_observer.disconnect();
+          p5_instance.remove();
+        };
+      }, []);
+
+      const handle_reset = () => {
+        set_is_playing(false);
+        play_direction_ref.current = 1;
+        set_param_a(PARAM_A_INIT);
+      };
+
+      const p_coord_tex = `P\\left(${format_num(math_state.p_x)},\\; ${format_num(math_state.p_y)}\\right)`;
+
+      let normal_eq_tex = "";
+      if (math_state.is_zero) {
+        normal_eq_tex = `x = 0 \\quad (y\\text{軸})`;
+      } else {
+        const slope = -1 / (2 * math_state.a);
+        const intercept = math_state.a * math_state.a + 0.5;
+        normal_eq_tex = `y = ${format_num(slope)}x ${format_signed_term(intercept)}`;
+      }
+
+      const q_coord_tex = math_state.q_exists
+        ? `Q\\left(${format_num(math_state.q_x)},\\; ${format_num(math_state.q_y)}\\right)`
+        : `\\text{交点なし} \\;(a = 0)`;
+
+      const pq_len_tex = math_state.q_exists
+        ? `PQ = ${format_num(math_state.pq_length, 3)}`
+        : `PQ : \\text{定義不可}`;
+
+      return (
+        <div className="flex flex-row w-screen h-screen overflow-hidden bg-slate-100">
+          {/* 左側（60%）：p5.js 描画キャンバス */}
+          <div className="w-3/5 h-full relative bg-white border-r border-slate-200">
+            <div ref={container_ref} className="w-full h-full" />
+
+            {math_state.is_near_optimal && (
+              <div className="absolute top-3 left-3 px-3 py-1.5 rounded-full bg-orange-500 text-white text-xs font-bold shadow-md flex items-center gap-1.5 pointer-events-none">
+                <span>★ 最小値付近</span>
+                <span>(|a| ≈ 1/√2 ≈ 0.71)</span>
+              </div>
+            )}
+
+            <div className="absolute bottom-3 left-3 px-3 py-2 rounded-lg bg-white/90 backdrop-blur-sm border border-slate-200 shadow-sm text-xs flex flex-wrap gap-x-4 gap-y-1 pointer-events-none">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" />
+                点 P (a, a²)
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block" />
+                点 Q
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className={`w-4 h-0.5 inline-block ${math_state.is_near_optimal ? "bg-orange-500" : "bg-indigo-500"}`} />
+                線分 PQ
+              </span>
+              {show_tangent && (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-4 h-0 border-t-2 border-dashed border-slate-400 inline-block" />
+                  接線
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 右側（40%）：操作・解説パネル（スクロール可能） */}
+          <div className="w-2/5 h-full overflow-y-auto p-5 space-y-4 bg-slate-50">
+            {/* 相互リンク */}
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <a
+                href="../index.html"
+                className="text-slate-500 hover:text-slate-800 transition-colors font-medium"
+              >
+                ← トップページへ
+              </a>
+              <a
+                href="./note_todai_2025_bun_1.html"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-blue-300 hover:text-blue-700 text-slate-700 font-semibold shadow-sm transition-colors"
+              >
+                <span>📖 電子ノートを見る</span>
+              </a>
+            </div>
+
+            {/* タイトル・問題概要 */}
+            <section className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+              <div className="text-xs font-semibold text-blue-600 tracking-wide mb-1">
+                2025 東京大学 文科 第1問
+              </div>
+              <h1 className="text-lg font-bold text-slate-900 mb-2">
+                2025年 東大文系 第1問：放物線と法線
+              </h1>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                放物線 {make_math_span("y = x^2")} 上の点 {make_math_span("P(a, a^2)")} における法線 {make_math_span("\\ell")} が、再び放物線と交わる点を {make_math_span("Q")} とします。パラメータ {make_math_span("a")} を動かして、点 {make_math_span("Q")} や線分 {make_math_span("PQ")} の変化を観察しましょう。
+              </p>
+            </section>
+
+            {/* パラメータ a スライダー */}
+            <section className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-800">
+                  パラメータ {make_math_span("a")} の操作
+                </span>
+                <span className="text-base font-mono font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-100">
+                  a = {format_num(math_state.a, 2)}
+                </span>
+              </div>
+
+              <div>
+                <input
+                  type="range"
+                  min={PARAM_A_MIN}
+                  max={PARAM_A_MAX}
+                  step={PARAM_A_STEP}
+                  value={param_a}
+                  onChange={(e) => set_param_a(parseFloat(e.target.value))}
+                  className="w-full param_slider"
+                  aria-label="パラメータ a"
+                />
+                <div className="flex justify-between text-xs text-slate-400 mt-1">
+                  <span>-2.5</span>
+                  <span>0</span>
+                  <span>+2.5</span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => set_is_playing((prev) => !prev)}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-semibold transition-colors ${
+                    is_playing
+                      ? "bg-amber-500 hover:bg-amber-600 text-white"
+                      : "bg-blue-600 hover:bg-blue-700 text-white"
+                  }`}
+                >
+                  {is_playing ? "停止" : "自動再生"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handle_reset}
+                  className="py-2 px-4 rounded-lg text-sm font-semibold bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors"
+                >
+                  リセット
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+                <span className="text-slate-500 mr-1">注目値:</span>
+                <button
+                  type="button"
+                  onClick={() => { set_is_playing(false); set_param_a(-0.71); }}
+                  className="px-2 py-1 rounded bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-medium"
+                >
+                  a ≈ -1/√2
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { set_is_playing(false); set_param_a(0); }}
+                  className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-medium"
+                >
+                  a = 0
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { set_is_playing(false); set_param_a(0.71); }}
+                  className="px-2 py-1 rounded bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-medium"
+                >
+                  a ≈ 1/√2
+                </button>
+              </div>
+            </section>
+
+            {/* リアルタイム数値・数式表示 */}
+            <section className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2.5">
+              <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-1.5">
+                リアルタイム数値・方程式
+              </h2>
+
+              <div className="grid grid-cols-1 gap-2 text-sm">
+                <div className="flex items-center justify-between bg-blue-50/70 px-3 py-2 rounded-lg border border-blue-100">
+                  <span className="font-semibold text-blue-800">点 P の座標</span>
+                  <span className="text-slate-900">{make_math_span(p_coord_tex)}</span>
+                </div>
+
+                <div className="flex items-center justify-between bg-sky-50/70 px-3 py-2 rounded-lg border border-sky-100">
+                  <span className="font-semibold text-sky-800">法線 {make_math_span("\\ell")}</span>
+                  <span className="text-slate-900">{make_math_span(normal_eq_tex)}</span>
+                </div>
+
+                <div className="flex items-center justify-between bg-red-50/70 px-3 py-2 rounded-lg border border-red-100">
+                  <span className="font-semibold text-red-800">交点 Q の座標</span>
+                  <span className="text-slate-900">{make_math_span(q_coord_tex)}</span>
+                </div>
+
+                <div
+                  className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-colors ${
+                    math_state.is_near_optimal
+                      ? "bg-orange-50 border-orange-300"
+                      : "bg-indigo-50/70 border-indigo-100"
+                  }`}
+                >
+                  <span className={`font-semibold ${math_state.is_near_optimal ? "text-orange-800" : "text-indigo-800"}`}>
+                    線分 PQ の長さ
+                  </span>
+                  <span className={`font-bold ${math_state.is_near_optimal ? "text-orange-700" : "text-slate-900"}`}>
+                    {make_math_span(pq_len_tex)}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            {/* 表示切り替えチェックボックス */}
+            <section className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2">
+              <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-1.5">
+                表示設定
+              </h2>
+              <label className="flex items-center gap-2.5 text-sm text-slate-700 cursor-pointer select-none py-0.5">
+                <input
+                  type="checkbox"
+                  checked={show_tangent}
+                  onChange={(e) => set_show_tangent(e.target.checked)}
+                  className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
+                />
+                <span>点 P における接線（破線）を表示する</span>
+              </label>
+              <label className="flex items-center gap-2.5 text-sm text-slate-700 cursor-pointer select-none py-0.5">
+                <input
+                  type="checkbox"
+                  checked={show_grid}
+                  onChange={(e) => set_show_grid(e.target.checked)}
+                  className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
+                />
+                <span>座標グリッドを表示する</span>
+              </label>
+            </section>
+
+            {/* 数学的ポイント */}
+            <section className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-2 text-xs text-slate-600 leading-relaxed">
+              <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-1.5">
+                数学的ポイント
+              </h2>
+              <p>
+                {make_math_span("a \\neq 0")} のとき、法線 {make_math_span("\\ell")} の傾きは {make_math_span("-\\frac{1}{2a}")} となり、放物線 {make_math_span("y = x^2")} とのもう一つの交点 {make_math_span("Q")} の {make_math_span("x")} 座標は {make_math_span("x_Q = -a - \\frac{1}{2a}")} です。
+              </p>
+              <p>
+                線分 {make_math_span("PQ")} の長さは {make_math_span("|a| = \\frac{1}{\\sqrt{2}} \\approx 0.71")} のとき最小値 {make_math_span("\\frac{3\\sqrt{3}}{2} \\approx 2.60")} をとります。
+              </p>
+            </section>
+          </div>
+        </div>
+      );
+    }
+
+    const root_element = document.getElementById("app_root_container");
+    ReactDOM.createRoot(root_element).render(React.createElement(app_root));
+  </script>
+</body>
+</html>
